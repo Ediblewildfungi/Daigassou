@@ -41,6 +41,7 @@
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
     <Prefer32Bit>false</Prefer32Bit>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <PlatformTarget>AnyCPU</PlatformTarget>
@@ -51,6 +52,7 @@
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
     <Prefer32Bit>false</Prefer32Bit>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <PropertyGroup>
     <ApplicationIcon>Resources\ico_128.ico</ApplicationIcon>
@@ -78,6 +80,7 @@
     <PlatformTarget>x64</PlatformTarget>
     <ErrorReport>prompt</ErrorReport>
     <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
     <OutputPath>bin\x64\Release\</OutputPath>
@@ -87,8 +90,15 @@
     <PlatformTarget>x64</PlatformTarget>
     <ErrorReport>prompt</ErrorReport>
     <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="alsa-sharp, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\packages\managed-midi.1.9.14\lib\net45\alsa-sharp.dll</HintPath>
+    </Reference>
+    <Reference Include="Commons.Music.Midi, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\packages\managed-midi.1.9.14\lib\net45\Commons.Music.Midi.dll</HintPath>
+    </Reference>
     <Reference Include="Costura, Version=3.1.4.0, Culture=neutral, PublicKeyToken=9919ef960d84173d, processorArchitecture=MSIL">
       <HintPath>..\packages\Costura.Fody.3.1.4\lib\net46\Costura.dll</HintPath>
     </Reference>
@@ -111,11 +121,19 @@
     <Reference Include="Machina.FFXIV">
       <HintPath>Reference\Machina.FFXIV.dll</HintPath>
     </Reference>
-    <Reference Include="Melanchall.DryWetMidi, Version=4.2.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>..\packages\Melanchall.DryWetMidi.4.1.1\lib\net45\Melanchall.DryWetMidi.dll</HintPath>
+    <Reference Include="Melanchall.DryWetMidi, Version=5.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\packages\Melanchall.DryWetMidi.5.0.0\lib\net45\Melanchall.DryWetMidi.dll</HintPath>
     </Reference>
-    <Reference Include="Midi, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>..\packages\midi-dot-net2.2.0.1\lib\net461\Midi.dll</HintPath>
+    <Reference Include="mml2MidiDotNet, Version=1.0.7378.18290, Culture=neutral, processorArchitecture=AMD64">
+      <HintPath>C:\Users\tooko\source\repos\mml2midi\x64\Release\mml2MidiDotNet.dll</HintPath>
+      <SpecificVersion>False</SpecificVersion>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="mugene, Version=1.0.7217.4744, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\packages\mugene.1.2.5\lib\net45\mugene.exe</HintPath>
+    </Reference>
+    <Reference Include="mugenelib, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\packages\mugene.1.2.5\lib\net45\mugenelib.dll</HintPath>
     </Reference>
     <Reference Include="Newtonsoft.Json, Version=12.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
       <HintPath>..\packages\Newtonsoft.Json.12.0.2\lib\net45\Newtonsoft.Json.dll</HintPath>
@@ -126,10 +144,11 @@
     <Reference Include="PagedControl, Version=2.2.0.0, Culture=neutral, processorArchitecture=MSIL">
       <HintPath>..\packages\PagedControl.2.2.0\lib\net35\PagedControl.dll</HintPath>
     </Reference>
-    <Reference Include="PresentationFramework" />
     <Reference Include="System" />
+    <Reference Include="System.Configuration" />
     <Reference Include="System.Core" />
     <Reference Include="System.Management" />
+    <Reference Include="System.Web.Extensions" />
     <Reference Include="System.Xml.Linq" />
     <Reference Include="System.Data.DataSetExtensions" />
     <Reference Include="Microsoft.CSharp" />
@@ -164,6 +183,12 @@
     <Compile Include="Forms\ConfigForm.Designer.cs">
       <DependentUpon>ConfigForm.cs</DependentUpon>
     </Compile>
+    <Compile Include="Forms\KeyBindForm13Key.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Forms\KeyBindForm13Key.Designer.cs">
+      <DependentUpon>KeyBindForm13Key.cs</DependentUpon>
+    </Compile>
     <Compile Include="Forms\PidSelect.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -182,12 +207,6 @@
     </Compile>
     <Compile Include="Forms\MainForm.Designer.cs">
       <DependentUpon>MainForm.cs</DependentUpon>
-    </Compile>
-    <Compile Include="Forms\KeyBindForm8Key.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="Forms\KeyBindForm8Key.Designer.cs">
-      <DependentUpon>KeyBindForm8Key.cs</DependentUpon>
     </Compile>
     <Compile Include="Network\NetworkClass.cs" />
     <Compile Include="NtpClient.cs" />
@@ -224,6 +243,8 @@
     <Compile Include="Utils\LogForm.Designer.cs">
       <DependentUpon>LogForm.cs</DependentUpon>
     </Compile>
+    <Compile Include="Utils\lyricPoster.cs" />
+    <Compile Include="Utils\MmlMidiConventer.cs" />
     <Compile Include="Utils\ParameterController.cs" />
     <EmbeddedResource Include="Forms\AboutForm.resx">
       <DependentUpon>AboutForm.cs</DependentUpon>
@@ -231,14 +252,14 @@
     <EmbeddedResource Include="Forms\ConfigForm.resx">
       <DependentUpon>ConfigForm.cs</DependentUpon>
     </EmbeddedResource>
+    <EmbeddedResource Include="Forms\KeyBindForm13Key.resx">
+      <DependentUpon>KeyBindForm13Key.cs</DependentUpon>
+    </EmbeddedResource>
     <EmbeddedResource Include="Forms\KeyBindForm37Key.resx">
       <DependentUpon>KeyBindForm37Key.cs</DependentUpon>
     </EmbeddedResource>
     <EmbeddedResource Include="Forms\MainForm.resx">
       <DependentUpon>MainForm.cs</DependentUpon>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Forms\KeyBindForm8Key.resx">
-      <DependentUpon>KeyBindForm8Key.cs</DependentUpon>
     </EmbeddedResource>
     <EmbeddedResource Include="Forms\PidSelect.resx">
       <DependentUpon>PidSelect.cs</DependentUpon>
@@ -272,7 +293,6 @@
       <DependentUpon>Settings.settings</DependentUpon>
       <DesignTimeSharedInput>True</DesignTimeSharedInput>
     </Compile>
-    <None Include="Version.ORZ" />
     <None Include="[大合奏]使用教程.md" />
   </ItemGroup>
   <ItemGroup>
@@ -309,7 +329,6 @@
     <None Include="Resources\icons8-idea-window-100.png" />
     <None Include="Resources\icons8-advertisement-page-90.png" />
     <Content Include="Resources\ico_128.ico" />
-    <None Include="Resources\TIM图片20180319212757.png" />
     <None Include="Resources\keybindingBGimg.png" />
   </ItemGroup>
   <ItemGroup>

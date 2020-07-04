@@ -1,13 +1,15 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Windows.Forms;
 using Daigassou.Properties;
 using Melanchall.DryWetMidi.Devices;
-using Melanchall.DryWetMidi.Smf;
-using Melanchall.DryWetMidi.Smf.Interaction;
+using Melanchall.DryWetMidi.Standards;
+using Melanchall.DryWetMidi.Core;
+using Melanchall.DryWetMidi.Interaction;
 
 namespace Daigassou
 {
@@ -45,6 +47,27 @@ namespace Daigassou
         public EnumPitchOffset Offset { get; set; }
         public int Bpm { get; set; }
 
+        public void OpenFile(byte[] s)
+        {
+            
+            midi = MidiFile.Read(new MemoryStream(s), new ReadingSettings
+            {
+                NoHeaderChunkPolicy = NoHeaderChunkPolicy.Ignore,
+                NotEnoughBytesPolicy = NotEnoughBytesPolicy.Ignore,
+                InvalidChannelEventParameterValuePolicy = InvalidChannelEventParameterValuePolicy.ReadValid,
+                InvalidChunkSizePolicy = InvalidChunkSizePolicy.Ignore,
+                InvalidMetaEventParameterValuePolicy = InvalidMetaEventParameterValuePolicy.SnapToLimits,
+                MissedEndOfTrackPolicy = MissedEndOfTrackPolicy.Ignore,
+                UnexpectedTrackChunksCountPolicy = UnexpectedTrackChunksCountPolicy.Ignore,
+                ExtraTrackChunkPolicy = ExtraTrackChunkPolicy.Read,
+                UnknownChunkIdPolicy = UnknownChunkIdPolicy.ReadAsUnknownChunk,
+                SilentNoteOnPolicy = SilentNoteOnPolicy.NoteOff,
+                TextEncoding = Encoding.Default,
+                InvalidSystemCommonEventParameterValuePolicy=InvalidSystemCommonEventParameterValuePolicy.SnapToLimits,
+                
+            });
+            Tmap = midi.GetTempoMap();
+        }
         public void OpenFile(string path)
         {
             midi = MidiFile.Read(path, new ReadingSettings
@@ -116,7 +139,7 @@ namespace Daigassou
                 .TrimEnd(" ticks/qnote".ToCharArray()));
             var tickBase = 60000 / (float) Bpm / ticksPerQuarterNote; //duplicate code need to be delete
 
-            using (var chordManager = trunks.ElementAt(Index).Events.ManageChords())
+            using (var chordManager = new ChordsManager(trunks.ElementAt(Index).Events))
             {
                 foreach (var chord in chordManager.Chords)
                     if (chord.Notes.Count() > 1)
@@ -163,35 +186,55 @@ namespace Daigassou
                 .TrimEnd(" ticks/qnote".ToCharArray()));
             var tickBase = 60000 / (float) Bpm / ticksPerQuarterNote;
             var eventOffTimeArray = new TimedEvent[127];
-            using (var eventsManager = trunks.ElementAt(Index).Events.ManageTimedEvents())
+
+            using (var notesManager = trunks.ElementAt(Index).ManageNotes())
             {
-                foreach (var @event in eventsManager.Events)
+                Note lastNote = null;
+                foreach (var @note in notesManager.Notes)
                 {
-                    tickBase = 60000 / (float) Tmap.Tempo.AtTime(@event.Time).BeatsPerMinute /
+                    tickBase = 60000 / (float) Tmap.Tempo.AtTime(@note.Time).BeatsPerMinute /
                                ticksPerQuarterNote;
-                    var minTick = (long) (MIN_DELAY_TIME_MS_EVENT / tickBase);
-                    switch (@event.Event)
+                    var minTick = (long) (85 / tickBase);
+
+                    if(lastNote!=null&& (lastNote.Time+lastNote.Length+minTick> @note.Time))
                     {
-                        case NoteOnEvent noteOnEvent:
-                            if (eventOffTimeArray[noteOnEvent.NoteNumber]?.Time + minTick > @event.Time)
-                                eventOffTimeArray[noteOnEvent.NoteNumber].Time =
-                                    @event.Time - minTick < 0 ? minTick : @event.Time - minTick; //未加小于0的判断
-                            break;
-                        case NoteOffEvent noteOffEvent:
-                            eventOffTimeArray[noteOffEvent.NoteNumber] = @event;
-                            break;
+                        lastNote.Length = lastNote.Length < minTick ?  minTick: lastNote.Length-minTick;
                     }
+                    lastNote = @note;
+
                 }
             }
         }
-
+        /// <summary>
+        /// 清除水果或其他软件产生的duration小于5的奇怪杂音
+        /// </summary>
+        public void PreProcessNoise()
+        {
+            var ticksPerQuarterNote = Convert.ToInt64(midi.TimeDivision.ToString()
+               .TrimEnd(" ticks/qnote".ToCharArray()));
+            var tickBase = 60000 / (float)Bpm / ticksPerQuarterNote;
+            var eventOffTimeArray = new TimedEvent[127];
+            using (var eventsManager = trunks.ElementAt(Index).Events.ManageNotes())
+            {
+                foreach (var @event in eventsManager.Notes)
+                {
+                    tickBase = 60000 / (float)Tmap.Tempo.AtTime(@event.Time).BeatsPerMinute /
+                               ticksPerQuarterNote;
+                    var minTick = (long)(MIN_DELAY_TIME_MS_EVENT / tickBase);
+                    if (@event.Length < minTick / 2) 
+                        eventsManager.Notes.Remove(@event);
+                }
+            }
+        }
         public void SaveToFile()
         {
             PreProcessTempoMap();
             for (var i = 0; i < trunks.Count; i++)
             {
+                PreProcessNoise();
                 PreProcessChord();
                 PreProcessEvents();
+
             }
 
             var stfd = new SaveFileDialog();
@@ -207,14 +250,15 @@ namespace Daigassou
 
             var ticksPerQuarterNote = Convert.ToInt64(midi.TimeDivision.ToString()
                 .TrimEnd(" ticks/qnote".ToCharArray()));
-            var tickBase = 60000 / (float) Bpm / ticksPerQuarterNote; //duplicate code need to be delete
-            var nowTimeMs = 0;
+            var tickBase = 60000 / (double) Bpm / ticksPerQuarterNote; //duplicate code need to be delete
+            var nowTimeMs = 0.0;
             var retKeyPlayLists = new Queue<KeyPlayList>();
             PreProcessTempoMap();
+            PreProcessNoise();
             PreProcessSpeed(speed);
             PreProcessChord();
             PreProcessEvents();
-            using (var timedEvent = trunkEvents.ManageTimedEvents())
+            using (var timedEvent = trunkEvents .ManageTimedEvents())
             {
                 foreach (var ev in timedEvent.Events)
                     switch (ev.Event)
@@ -222,7 +266,7 @@ namespace Daigassou
                         case NoteOnEvent @event:
                         {
                             var noteNumber = (int) (@event.NoteNumber + Offset);
-                            nowTimeMs += (int) (tickBase * @event.DeltaTime);
+                            nowTimeMs +=  (tickBase * @event.DeltaTime);
                             retKeyPlayLists.Enqueue(new KeyPlayList(KeyPlayList.NoteEvent.NoteOn,
                                 noteNumber, nowTimeMs));
                         }
@@ -230,15 +274,15 @@ namespace Daigassou
                         case NoteOffEvent @event:
                         {
                             var noteNumber = (int) (@event.NoteNumber + Offset);
-                            nowTimeMs += (int) (tickBase * @event.DeltaTime);
+                            nowTimeMs +=  (tickBase * @event.DeltaTime);
                             retKeyPlayLists.Enqueue(new KeyPlayList(KeyPlayList.NoteEvent.NoteOff,
                                 noteNumber, nowTimeMs));
                         }
                             break;
                         case SetTempoEvent @event:
                         {
-                            nowTimeMs += (int) (tickBase * @event.DeltaTime);
-                            tickBase = (float) @event.MicrosecondsPerQuarterNote / 1000 / ticksPerQuarterNote;
+                            nowTimeMs +=  (tickBase * @event.DeltaTime);
+                            tickBase = (double) @event.MicrosecondsPerQuarterNote / (1000.0 *ticksPerQuarterNote);
                         }
                             break;
                         default:
@@ -282,7 +326,7 @@ namespace Daigassou
             return 0;
         }
 
-        public int PlaybackStart(int BPM)
+        public int PlaybackStart(int BPM,EventHandler playbackFinishHandler)
         {
             if (midi == null) return -1;
 
@@ -292,12 +336,37 @@ namespace Daigassou
             if (playback == null)
                 playback = new Playback(trunks.ElementAt(Index).Events, midi.GetTempoMap(), outputDevice);
             playback.Speed = (double) BPM / GetBpm();
+            playback.InterruptNotesOnStop = true;
             playback.Start();
-
+            playback.Finished += playbackFinishHandler;
 
             return 0;
         }
 
+
+
+        public int PlaybackPercentGet()
+        {
+            if (playback.IsRunning)
+            {
+                var cur = (MidiTimeSpan)playback.GetCurrentTime(TimeSpanType.Midi);
+                var dur = (MidiTimeSpan)playback.GetDuration(TimeSpanType.Midi);
+
+                return (int)(cur.TimeSpan * 100 / dur.TimeSpan);
+            }
+            return 0;
+        }
+        public void PlaybackPercentSet(int process)
+        {
+            if (playback.IsRunning)
+            {
+                MidiTimeSpan dur = (MidiTimeSpan)playback.GetDuration(TimeSpanType.Midi);
+
+                var tar = new MidiTimeSpan(dur.TimeSpan * process / 100);
+                playback.MoveToTime(tar); 
+                
+            }
+        }
         public string PlaybackInfo()
         {
             var ret = "";
@@ -310,7 +379,6 @@ namespace Daigassou
                 ret = Regex.Match(cur.ToString(), expression).Groups["time"].Value + "/" +
                       Regex.Match(dur.ToString(), expression).Groups["time"].Value;
             }
-
             return ret;
         }
 
@@ -318,6 +386,7 @@ namespace Daigassou
         {
             if (midi == null) return -1;
             if (playback == null) return -2;
+            
             playback.Stop();
             playback.Dispose();
             playback = null;
@@ -326,8 +395,7 @@ namespace Daigassou
 
         public int GetBpm()
         {
-            var bpm = 80;
-            bpm = (int) Tmap.Tempo.AtTime(0).BeatsPerMinute;
+            var bpm = (int) Tmap.Tempo.AtTime(0).BeatsPerMinute;
             return bpm;
         }
     }

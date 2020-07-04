@@ -75,9 +75,8 @@ namespace Daigassou
         public static Keys GetNoteToKey(int note)
         {
             if (!Settings.Default.IsEightKeyLayout) return (Keys) _keymap[note];
-            if (note == 84)
-                return (Keys) _keymap[73];
-            return (Keys) _keymap[note % 12 + 60];
+            if (note == 84) return (Keys)_keymap[84];
+            else return (Keys) _keymap[note % 12 + 60];
 
         }
 
@@ -96,7 +95,7 @@ namespace Daigassou
             SaveConfig();
         }
 
-        public static void SetKeyToNote_8(int note, int key)
+        public static void SetKeyToNote_13(int note, int key)
         {
             var offset = note % 12;
             if (note == 72)
@@ -131,12 +130,12 @@ namespace Daigassou
 
             if (Settings.Default.IsEightKeyLayout)
             {
-                Settings.Default.KeyBinding8 = keyArrayList;
+                Settings.Default.KeyBinding13 = keyArrayList;
                 Settings.Default.CtrlKeyBinding = ctrlKeyArrayList;
             }
             else
             {
-                Settings.Default.KeyBinding22 = keyArrayList;
+                Settings.Default.KeyBinding37 = keyArrayList;
             }
 
             Settings.Default.HotKeyBinding = JsonConvert.SerializeObject(hotkeyArrayList);
@@ -146,9 +145,9 @@ namespace Daigassou
 
         public static void LoadConfig()
         {
-            var settingArrayList = Settings.Default.KeyBinding22;
+            var settingArrayList = Settings.Default.KeyBinding37;
 
-            if (Settings.Default.IsEightKeyLayout) settingArrayList = Settings.Default.KeyBinding8;
+            if (Settings.Default.IsEightKeyLayout) settingArrayList = Settings.Default.KeyBinding13;
             var settingKeyArrayList = Settings.Default.CtrlKeyBinding;
             if (settingArrayList != null)
                 for (var i = 0; i < settingArrayList.Count; i++)

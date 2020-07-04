@@ -1,11 +1,12 @@
-﻿using System;
-using System.Collections;
-using System.Linq;
-using System.Windows.Forms;
-using BondTech.HotkeyManagement.Win;
+﻿using BondTech.HotkeyManagement.Win;
 using Daigassou.Forms;
-using Daigassou.Input_Midi;
 using Daigassou.Properties;
+using System;
+using System.Collections;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.Drawing;
+using System.Windows.Forms;
 
 namespace Daigassou
 {
@@ -25,6 +26,7 @@ namespace Daigassou
             kc = _kc;
             hkm = _hkm;
             InitValue();
+            tabControl1.TabPages.Remove(tbLyric);
         }
 
         private void InitValue()
@@ -104,10 +106,13 @@ namespace Daigassou
 
         private void Panel2_Click(object sender, EventArgs e)
         {
-            if (ClickCount++ > 5)
+            PidSelect pidSelect = new PidSelect();
+            pidSelect.GetPid += (PidSelect.PidSelector)(x =>
             {
-                new PidSelect(kc).ShowDialog();
-            }
+                this.kc.isBackGroundKey = true;
+                this.kc.InitBackGroundKey(Process.GetProcessById(x).MainWindowHandle);
+            });
+            pidSelect.ShowDialog();
         }
 
         private void HotKeyControl1_HotKeyIsReset(object sender, EventArgs e)
@@ -121,6 +126,42 @@ namespace Daigassou
         private void panel2_Paint(object sender, PaintEventArgs e)
         {
 
+        }
+
+        private void panel4_Paint(object sender, PaintEventArgs e)
+        {
+
+        }
+
+        private void cbLrcEnable_CheckedChanged(object sender, EventArgs e)
+        {
+            Daigassou.Utils.lyricPoster.IsLrcEnable = cbLrcEnable.Checked;
+        }
+
+        private void nudPort_ValueChanged(object sender, EventArgs e)
+        {
+            Daigassou.Utils.lyricPoster.port = (uint)nudPort.Value;
+        }
+
+        private void comboBox1_SelectedIndexChanged(object sender, EventArgs e)
+        {
+
+        }
+
+        private void cbSuffix_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            Daigassou.Utils.lyricPoster.suffix = cbSuffix.SelectedItem.ToString();
+        }
+
+        private void panel4_Click(object sender, EventArgs e)
+        {
+            
+        }
+
+        private void panel4_MouseClick(object sender, MouseEventArgs e)
+        {
+            if (!tabControl1.TabPages.Contains(tbLyric)&&e.Button==MouseButtons.Middle)
+                tabControl1.TabPages.Add(tbLyric);
         }
     }
 }
