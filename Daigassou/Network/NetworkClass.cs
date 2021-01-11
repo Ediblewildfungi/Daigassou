@@ -12,6 +12,7 @@ using Machina.FFXIV;
 using Machina;
 using NetFwTypeLib;
 
+
 namespace Daigassou
 {
     public class PlayEvent : EventArgs
@@ -97,7 +98,20 @@ namespace Daigassou
                 Play?.Invoke(this, new PlayEvent(1, 0, " "));
 
             }
+            if (res.header.MessageType == ParameterController.ensembleStartPacket)//ensemble start
+            {
 
+                var unixTime = BitConverter.ToUInt32(res.data, 24);
+                ParameterController.GetInstance().isEnsembleSync = true;
+                Play?.Invoke(this, new PlayEvent(0, Convert.ToInt32(unixTime + 6), " "));
+
+            }
+            if (res.header.MessageType == ParameterController.ensemblePacket)//ensemble mode
+            {
+                if(ParameterController.GetInstance().isEnsembleSync)
+                ParameterController.GetInstance().AnalyzeEnsembleNotes(res.data);
+                ParameterController.GetInstance().isEnsembleSync = false;
+            }
 
         }
         internal class ParseResult
@@ -118,31 +132,31 @@ namespace Daigassou
         private DateTime lastSentTime;
         private void MessageSent(long epoch, byte[] message, int set, FFXIVNetworkMonitor.ConnectionType connectionType)
         {
-            var res = Parse(message);
+            try
+            {
+                var res = Parse(message);
+                if (res.header.MessageType == ParameterController.instruSendingPacket) //Bard Performance 
+                {
+                   var type = BitConverter.ToUInt16(res.data, 32);
+                    if (type == (0x071C))
+                    {
+                        byte data = res.data[36];
+                        if (data <= 19)
+                        {
+                            Play?.Invoke(this, new PlayEvent(2, 0, constStringClass.IDtoString(data)));
+                            Log.overlayLog($"乐器更换：{constStringClass.IDtoString(data)}");
+                        }
 
-            var item = new PacketEntry
-            {
-                IsVisible = true,
-                ActorControl = -1,
-                Data = message,
-                Message = res.header.MessageType.ToString("X4"),
-                Direction = "C",
-                Category = set.ToString(),
-                Size = res.header.MessageLength.ToString(),
-                Set = set,
-                RouteID = res.header.RouteID.ToString(),
-                PacketUnixTime = res.header.Seconds,
-                Connection = connectionType
-            };
-            if (res.header.MessageType == 0x0287) //Bard Performance
-            {
-                var length = res.data[32];
-                var notes = new byte[length];
-                Array.Copy(res.data, 33, notes, 0, length);
-                //Console.WriteLine("1 packet");
-                //Log.B(notes, true);//TODO: Time analyze 
-                //ParameterController.GetInstance().AnalyzeNotes(notes);
+                    }
+
+                }
             }
+            catch (Exception e)
+            {
+                Log.overlayLog(e.ToString());
+                
+            }
+
         }
 
         private static ParseResult Parse(byte[] data)
@@ -164,7 +178,7 @@ namespace Daigassou
             Log.overlayLog($"开始检测进程：{processID}");
             FFXIVNetworkMonitor monitor = new FFXIVNetworkMonitor();
             RegisterToFirewall();
-            monitor.MonitorType = TCPNetworkMonitor.NetworkMonitorType.RawSocket;
+            monitor.MonitorType = Daigassou.Properties.Settings.Default.isUsingWinPCap? TCPNetworkMonitor.NetworkMonitorType.WinPCap: TCPNetworkMonitor.NetworkMonitorType.RawSocket;
             monitor.MessageReceived = MessageReceived;
             monitor.MessageSent = MessageSent;
             monitor.ProcessID = processID;
@@ -173,7 +187,7 @@ namespace Daigassou
             while (!_shouldStop)
             {
                 // So don't burn the cpu while doing nothing
-                Thread.Sleep(1);
+                Thread.Sleep(5);
             }
 
             Console.WriteLine("MachinaCaptureWorker: Terminating");

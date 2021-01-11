@@ -18,6 +18,9 @@ using Daigassou.Utils;
 using Newtonsoft.Json;
 using RainbowMage.OverlayPlugin;
 using Daigassou.Forms;
+using Melanchall.DryWetMidi.Devices;
+using Melanchall.DryWetMidi.Core;
+
 namespace Daigassou
 {
     public partial class MainForm : Form
@@ -39,22 +42,22 @@ namespace Daigassou
         private bool isCaptureFlag;
         private Queue<KeyPlayList> keyPlayLists;
         private NetworkClass net;
-        
+        private int trackLock = 0;
+        private bool netMidiFlag = false;
         public MainForm()
         {
             InitializeComponent();
             formUpdate();
-            
             KeyBinding.LoadConfig();
             timeBeginPeriod(1);
-            ThreadPool.SetMaxThreads(25, 50);
+            
             Task.Run((Action)(() =>
             {
                 CommonUtilities.GetLatestVersion();
                 this.TimeSync();
             }));
-            if (DateTime.Now > new DateTime(2020, 03, 15)) Environment.Exit(-2);
-            Text += $@" Ver{Assembly.GetExecutingAssembly().GetName().Version}";
+            
+            Text += $@" Ver{Assembly.GetExecutingAssembly().GetName().Version} ";
             cbMidiKeyboard.DataSource = KeyboardUtilities.GetKeyboardList();
             kc.stopHandler += StopKeyPlay;
         }
@@ -205,6 +208,7 @@ namespace Daigassou
                 _runningTask.ThreadState != System.Threading.ThreadState.Stopped &&
                 _runningTask.ThreadState != System.Threading.ThreadState.Aborted) Thread.Sleep(1);
             lyricPoster.LrcStop();
+            mtk.midiPlay?.Stop();
             btnSyncReady.BackColor = Color.FromArgb(255, 110, 128);
             btnSyncReady.Text = "准备好了";
             kc.ResetKey();
@@ -232,7 +236,8 @@ namespace Daigassou
             kc.isPlayingFlag = false;
             kc.isRunningFlag = false;
             kc.pauseOffset = 0;
-            if (Path.GetExtension(midFileDiag.FileName) != ".mid" && Path.GetExtension(midFileDiag.FileName) != ".midi")
+            ParameterController.GetInstance().Pitch = 0;
+            if (midFileDiag.FileName==string.Empty)
             {
                 Log.overlayLog($"错误：没有Midi文件");
                 MessageBox.Show(new Form() { TopMost = true }, "没有midi你演奏个锤锤？", "喵喵喵？", MessageBoxButtons.OK, MessageBoxIcon.Question);
@@ -250,16 +255,35 @@ namespace Daigassou
                 btnSyncReady.Text = "中断演奏";
                 var Interval = interval < 1000 ? 1000 : interval;
                 var sub = (long) (1000 - interval);
-
+                int bpm = 120;
                 //timer1.Start();
                 var sw = new Stopwatch();
                 sw.Start();
                 Log.overlayLog($"文件名：{Path.GetFileName(midFileDiag.FileName)}");
                 Log.overlayLog($"定时：{Interval}毫秒后演奏");
-                OpenFile(midFileDiag.FileName);
+                if (ParameterController.GetInstance().isEnsembleSync)
+                {
+                    System.Threading.Timer timer1 = new System.Threading.Timer((TimerCallback)(x => this.kc.KeyboardPress(48)), new object(), Interval - 4000, 0);
+                    System.Threading.Timer timer2 = new System.Threading.Timer((TimerCallback)(x => this.kc.KeyboardRelease(48)), new object(), Interval - 3950, 0);
+                    Log.overlayLog($"定时：同步音按下");
+                }
+                if(netMidiFlag)
+                {
+                    keyPlayLists = mtk.netmidi?.Tracks[trackComboBox.SelectedIndex].notes;
+                    bpm = mtk.netmidi.BPM;
+                }
+                else
+                {
+                    
+                    OpenFile(midFileDiag.FileName);
+                    bpm = mtk.GetBpm();
+                    mtk.GetTrackManagers();
+                    keyPlayLists = mtk.ArrangeKeyPlaysNew((double)(bpm / nudBpm.Value));
+                }
+
+
                 lyricPoster.LrcStart(midFileDiag.FileName.Replace(".mid", ".mml").Replace(".mml", ".lrc"), interval);
-                mtk.GetTrackManagers();
-                keyPlayLists = mtk.ArrangeKeyPlaysNew((double)(mtk.GetBpm() / nudBpm.Value));
+                File.WriteAllText($"1.txt", JsonConvert.SerializeObject(keyPlayLists));
                 if (interval<0)
                 {
                     var keyPlay=keyPlayLists.Where((x)=>x.TimeMs> sub);
@@ -274,10 +298,10 @@ namespace Daigassou
                 
                 _runningFlag = true;
                 cts = new CancellationTokenSource();
-                //var lyric = new lyricPoster();
-                //var l=lyric.AnalyzeLrc(@"D:\花火.lrc");
-                //Task.Run(() => { lyric.RunningLrc(l, interval - (int)sw.ElapsedMilliseconds); });
-                _runningTask = createPerformanceTask(cts.Token, interval-(int)sw.ElapsedMilliseconds);//minus bug?
+                if (Settings.Default.isUsingAnalysis||netMidiFlag==true)
+                    _runningTask = createPerformanceTask(cts.Token, interval - (int)sw.ElapsedMilliseconds);//minus bug?
+                else
+                    _runningTask = createPerformanceTaskOriginal(cts.Token, (double)(nudBpm.Value / bpm));
                 _runningTask.Priority = ThreadPriority.Highest;
 
             }
@@ -316,6 +340,40 @@ namespace Daigassou
             return thread;
 
         }
+        private Thread createPerformanceTaskOriginal(CancellationToken token,double speed)
+        {
+            ParameterController.GetInstance().InternalOffset = (int)numericUpDown2.Value;
+            ParameterController.GetInstance().Offset = 0;
+            
+            Thread thread = new Thread(
+                () => {
+                    KeyboardUtilities.kc = kc;
+                    kc.isRunningFlag = true;
+                    mtk.PlaybackWithoutAnalysis(speed, P_EventPlayed, cts.Token);
+                  
+                    _runningFlag = false;
+                }
+                );
+            thread.Start();
+            return thread;
+
+        }
+
+        private void P_EventPlayed(object sender, MidiEventPlayedEventArgs e)
+        {
+            switch (e.Event)
+            {
+                case NoteOnEvent keyon:
+                    KeyboardUtilities.NoteOn(keyon);
+                    
+                    break;
+                case NoteOffEvent keyoff:
+                    KeyboardUtilities.NoteOff(keyoff);
+                    
+                    break;
+            }
+        }
+
 
         private void trackComboBox_SelectedIndexChanged(object sender, EventArgs e)
         {
@@ -332,9 +390,10 @@ namespace Daigassou
                 
             else
                 return;
-
+            netMidiFlag = false;
             pathTextBox.Text = Path.GetFileName( midFileDiag.FileName);
             Log.overlayLog($"打开文件：{Path.GetFileName(midFileDiag.FileName)}");
+            radioButton2.Checked = true;
             _tmpScore = mtk.GetTrackManagers(); //note tracks
             var bpm = mtk.GetBpm();
             var tmp = new List<string>();
@@ -345,7 +404,7 @@ namespace Daigassou
 
 
             trackComboBox.DataSource = tmp;
-            trackComboBox.SelectedIndex =0;
+            trackComboBox.SelectedIndex =Math.Min(tmp.Count-1,trackLock);
             //TODO: if source midi not imported successfully will cause error
             //TODO: Enhancement issue#14 lock track selection
             if (bpm >= nudBpm.Maximum)
@@ -359,17 +418,24 @@ namespace Daigassou
 
         private void radioButton1_CheckedChanged(object sender, EventArgs e)
         {
+            ParameterController.GetInstance().Pitch = EnumPitchOffset.OctaveLower - mtk.Offset;
             mtk.Offset = EnumPitchOffset.OctaveLower;
+            Log.overlayLog($"[移调] 当前 {ParameterController.GetInstance().Pitch}");
         }
 
         private void radioButton2_CheckedChanged(object sender, EventArgs e)
         {
+            ParameterController.GetInstance().Pitch = EnumPitchOffset.None - mtk.Offset;
             mtk.Offset = EnumPitchOffset.None;
+            Log.overlayLog($"[移调] 当前 {ParameterController.GetInstance().Pitch}");
+
         }
 
         private void radioButton3_CheckedChanged(object sender, EventArgs e)
         {
+            ParameterController.GetInstance().Pitch = EnumPitchOffset.OctaveHigher - mtk.Offset;
             mtk.Offset = EnumPitchOffset.OctaveHigher;
+            Log.overlayLog($"[移调] 当前 {ParameterController.GetInstance().Pitch}");
         }
 
         private void numericUpDown1_ValueChanged(object sender, EventArgs e)
@@ -439,6 +505,7 @@ namespace Daigassou
                     {
                         cbMidiKeyboard.Enabled = false;
                         btnKeyboardConnect.BackColor = Color.Aquamarine;
+                        btnKeyboardConnect.Text = "断开连接";
                     }
                 }
                 else
@@ -447,6 +514,7 @@ namespace Daigassou
                     cbMidiKeyboard.Enabled = true;
                     cbMidiKeyboard.DataSource = KeyboardUtilities.GetKeyboardList();
                     btnKeyboardConnect.BackColor = Color.FromArgb(255,110,128);
+                    btnKeyboardConnect.Text = "开始连接";
                 }
         }
 
@@ -584,6 +652,7 @@ namespace Daigassou
                 
                 net = new NetworkClass();
                 net.Play += Net_Play;
+                
                 try
                 {
                     List<Process> ffxivProcess = FFProcess.FindFFXIVProcess();
@@ -616,6 +685,8 @@ namespace Daigassou
             }
         }
         private delegate void remotePlay(int time, string name);
+        private delegate void updateForm(string text);
+        
         private void Net_Play(object sender, PlayEvent e)
         {
             if (this.InvokeRequired)
@@ -629,6 +700,11 @@ namespace Daigassou
                 {
                     var n = new remotePlay(NetStop);
                     this.Invoke(n, e.Time, e.Text);
+                }
+                else if (e.Mode==2)
+                {
+                    var n = new updateForm(upform);
+                    this.Invoke(n, e.Text);
                 }
                 
             }
@@ -653,20 +729,19 @@ namespace Daigassou
             DateTime dt = startTime.AddSeconds(time);
 
             dtpSyncTime.Value = dt;
-            var msTime = (dt - DateTime.Now).TotalMilliseconds;
-            StartKeyPlayback((int)msTime + (int)numericUpDown2.Value);
+             SyncButton_Click(new object(), new EventArgs());
+            //var msTime = (dt - DateTime.Now).TotalMilliseconds;
+            //StartKeyPlayback((int)msTime + (int)numericUpDown2.Value);
             Log.overlayLog($"网络控制：{name.Trim().Replace("\0", string.Empty)}发起倒计时，目标时间:{dt.ToString("HH:mm:ss")}");
-            tlblTime.Text = $"{name.Trim().Replace("\0",string.Empty)}发起倒计时:{msTime}毫秒";
-            //if (ParameterController.GetInstance().isEnsembleSync)
-            //{
-            //    System.Threading.Timer timer1 = new System.Threading.Timer((TimerCallback)(x => this.kc.KeyboardPress(48)), new object(), 2000, 0);
-            //    System.Threading.Timer timer2 = new System.Threading.Timer((TimerCallback)(x => this.kc.KeyboardRelease(48)), new object(), 2050, 0);
+            //tlblTime.Text = $"{name.Trim().Replace("\0",string.Empty)}发起倒计时:{msTime}毫秒";
 
-            //}
 
 
         }
-
+        private void upform(string text)
+        {
+            this.Text= $@"[{text}]大合奏！ Ver{Assembly.GetExecutingAssembly().GetName().Version} ";
+        }
         private void NetStop(int time, string name)
         {
             StopKeyPlay();
@@ -712,6 +787,7 @@ namespace Daigassou
         private void TrackComboBox_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.Alt && e.Control && e.Shift && e.KeyCode == Keys.S) mtk.SaveToFile();
+            else if (e.Alt && e.Control && e.Shift && e.KeyCode == Keys.W) mtk.SaveJsonToFile();
         }
 
         private void ToolStripSplitButton1_ButtonClick(object sender, EventArgs e)
@@ -786,6 +862,74 @@ namespace Daigassou
         private void tbMidiProcess_Scroll(object sender, EventArgs e)
         {
             mtk.PlaybackPercentSet(tbMidiProcess.Value);
+        }
+
+        private void label2_Click(object sender, EventArgs e)
+        {
+            if(trackLock!=0)
+            {
+                trackLock = 0;
+                label2.BackColor = Color.White;
+            }
+            else
+            {
+                trackLock = trackComboBox.SelectedIndex;
+                label2.BackColor = Color.FromArgb(255, 110, 128);
+            }    
+        }
+
+        private void label1_Click(object sender, EventArgs e)
+        {
+            var s = new SongSelect();
+            string id="";
+            s.Getid += (SongSelect.IdSelector)(x =>
+            {
+                id = x;
+            });
+            s.ShowDialog();
+            if (id!=null)
+            {
+                var jsonscore=NetMidiDownload.DownloadMidi(id);
+                try
+                {
+                    KeyplayClass keyplay = JsonConvert.DeserializeObject<KeyplayClass>(jsonscore);
+
+
+
+
+                    pathTextBox.Text = keyplay.Filename;
+                    Log.overlayLog($"网络文件：{Path.GetFileName(midFileDiag.FileName)}");
+                    radioButton2.Checked = true;
+
+                    var bpm = keyplay.BPM;
+                    var tmp = new List<string>();
+
+                    if (keyplay.Tracks?.Length != 0)
+                        for (var i = 0; i < keyplay.Tracks.Length; i++)
+                            tmp.Add($"track_{i}:{keyplay.Tracks[i].name}");
+
+
+                    trackComboBox.DataSource = tmp;
+                    trackComboBox.SelectedIndex = Math.Min(tmp.Count - 1, trackLock);
+                    //TODO: if source midi not imported successfully will cause error
+                    //TODO: Enhancement issue#14 lock track selection
+                    if (bpm >= nudBpm.Maximum)
+                        nudBpm.Value = nudBpm.Maximum;
+                    else if (bpm <= nudBpm.Minimum)
+                        nudBpm.Value = nudBpm.Minimum;
+                    else
+                        nudBpm.Value = bpm;
+                    mtk.netmidi = keyplay;
+                    netMidiFlag = true;
+
+                }
+                catch (Exception ee)
+                {
+
+                   throw ee ;
+                }
+            }
+            
         }
     }
 }
